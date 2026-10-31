@@ -1,0 +1,78 @@
+{% load duree %}<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}{{ ATELIER_NOM }}{% endblock %}</title>
+<style>
+:root{--ink:#1f2a5a;--madder:#b3362f;--bg:#eef0f5;--card:#fff;--t:#1b1f33;--m:#5b6070;--b:#d7d9e2;--ok:#2f6f4f;--warn:#a85d00;--okbg:#e4f2ea;--warnbg:#fdf0dc;--badbg:#fbe5e3}
+@media(prefers-color-scheme:dark){:root{--ink:#9fb0f5;--madder:#ff8b82;--bg:#12141f;--card:#1b1e2d;--t:#eceefa;--m:#9ba0b8;--b:#2e3248;--ok:#7ed3a4;--warn:#ffc069;--okbg:#17301f;--warnbg:#3a2a10;--badbg:#3b1b19}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+h1,h2,h3{font-family:Georgia,"Times New Roman",serif;font-weight:700;line-height:1.2;margin:0 0 .6rem}
+h1{font-size:1.6rem}h2{font-size:1.2rem}
+a{color:var(--ink)}
+header{background:var(--ink);color:#fff;padding:.7rem 1rem}
+@media(prefers-color-scheme:dark){header{background:#232845;color:#eceefa}}
+header .in{max-width:880px;margin:auto;display:flex;flex-wrap:wrap;gap:.4rem 1rem;align-items:center}
+header strong{font-family:Georgia,serif;font-size:1.1rem;margin-right:auto}
+header a,header button{color:inherit;background:none;border:0;font:inherit;cursor:pointer;text-decoration:none;padding:.2rem 0}
+header a:hover,header button:hover{text-decoration:underline}
+main{max-width:880px;margin:auto;padding:1rem}
+.card{background:var(--card);border:1px solid var(--b);border-radius:10px;padding:1rem;margin-bottom:1rem}
+.row{display:flex;gap:.8rem;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.m{color:var(--m);font-size:.9rem}
+.btn{display:inline-block;background:var(--ink);color:#fff;border:0;border-radius:8px;padding:.65rem 1rem;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;min-height:44px}
+@media(prefers-color-scheme:dark){.btn{background:#5568c9}}
+.btn.sec{background:transparent;color:var(--ink);border:1px solid var(--b)}
+.btn.bad{background:var(--madder);color:#fff}
+.btn.big{display:block;width:100%;font-size:1.15rem;padding:1rem;text-align:center}
+.btn:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--madder);outline-offset:2px}
+.tag{display:inline-block;border-radius:99px;padding:.1rem .65rem;font-size:.82rem;font-weight:600}
+.tag.actif{background:var(--okbg);color:var(--ok)}.tag.epuise{background:var(--warnbg);color:var(--warn)}
+.tag.revoque{background:var(--badbg);color:var(--madder)}.tag.aucun{background:var(--b);color:var(--m)}
+.tag.dans{background:var(--ink);color:#fff}
+.msg{border-radius:8px;padding:.7rem 1rem;margin-bottom:.8rem;font-weight:600}
+.msg.success{background:var(--okbg);color:var(--ok)}.msg.error{background:var(--badbg);color:var(--madder)}
+label{display:block;font-weight:600;margin:.8rem 0 .2rem}
+input,select{width:100%;padding:.65rem;border:1px solid var(--b);border-radius:8px;background:var(--card);color:var(--t);font:inherit}
+.err{color:var(--madder);font-size:.9rem}
+.time{font-family:Georgia,serif;font-size:1.5rem;font-variant-numeric:tabular-nums}
+.time.warn{color:var(--warn)}.time.zero{color:var(--madder)}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{text-align:left;padding:.45rem .3rem;border-bottom:1px solid var(--b)}
+th{color:var(--m);font-weight:600}
+.scroll{overflow-x:auto}
+.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.avatar{width:72px;height:90px;object-fit:cover;border-radius:6px;border:1px solid var(--b)}
+form.inline{display:inline}
+</style>
+</head>
+<body>
+<header><div class="in">
+  <strong>{{ ATELIER_NOM }}</strong>
+  {% if user.is_authenticated %}
+    <a href="{% url 'accueil' %}">Accueil</a>
+    <a href="{% url 'membres' %}">Membres</a>
+    <a href="{% url 'membre_nouveau' %}">Inscrire</a>
+    <a href="{% url 'caisse' %}">Caisse</a>
+    {% if est_admin %}<a href="{% url 'responsables' %}">Responsables</a><a href="/admin/">Administration</a>{% endif %}
+    <form class="inline" method="post" action="{% url 'deconnexion' %}">{% csrf_token %}<button type="submit">Déconnexion</button></form>
+  {% endif %}
+</div></header>
+<main>
+{% for m in messages %}<div class="msg {{ m.tags }}" role="status">{{ m }}</div>{% endfor %}
+{% block content %}{% endblock %}
+</main>
+<script>
+document.querySelectorAll('[data-restant]').forEach(function(el){
+  var r=parseInt(el.dataset.restant,10);
+  function f(s){s=Math.max(s,0);var h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
+    return h+' h '+String(m).padStart(2,'0')+' min '+String(x).padStart(2,'0')+' s';}
+  function maj(){el.textContent=f(r);el.classList.toggle('warn',r>0&&r<=7200);el.classList.toggle('zero',r<=0);}
+  maj();
+  setInterval(function(){r--;maj();if(r===-1){location.reload();}},1000);
+});
+</script>
+</body>
+</html>

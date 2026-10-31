@@ -1,0 +1,27 @@
+{% extends "gestion/base.html" %}
+{% load duree %}
+{% block title %}Membres{% endblock %}
+{% block content %}
+<div class="row"><h1>Membres</h1><a class="btn" href="{% url 'membre_nouveau' %}">Inscrire un membre</a></div>
+<form method="get" class="card"><label for="q" style="margin-top:0">Chercher par nom, numéro ou téléphone</label>
+  <input id="q" name="q" value="{{ q }}" type="search"></form>
+{% for l in lignes %}
+<div class="card">
+  <div class="row">
+    <div><strong><a href="{% url 'membre_detail' l.m.pk %}">{{ l.m.nom }}</a></strong>
+      <div class="m">{{ l.m.numero }} · {{ l.m.metier|default:"Métier non précisé" }}</div></div>
+    <div>
+      {% if l.ouverte %}<span class="tag dans">Dans l'atelier</span>{% endif %}
+      <span class="tag {{ l.etat }}">{% if l.etat == "actif" %}{{ l.restant|duree }} restantes{% elif l.etat == "epuise" %}Épuisé{% elif l.etat == "revoque" %}Révoqué{% else %}Sans forfait{% endif %}</span>
+    </div>
+  </div>
+  {% if l.etat == "actif" or l.ouverte %}
+  <form method="post" action="{% url 'valider' l.m.pk %}" style="margin-top:.6rem">{% csrf_token %}
+    <input type="hidden" name="sans_carte" value="1"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <button class="btn sec" type="submit">{% if l.ouverte %}Valider la sortie{% else %}Valider l'entrée{% endif %}</button></form>
+  {% endif %}
+</div>
+{% empty %}
+<div class="card"><p class="m">Aucun membre trouvé.</p></div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "gestion/base.html" %}
+{% load duree %}
+{% block title %}Validation — {{ m.nom }}{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;gap:1rem;align-items:flex-start">
+    {% if m.photo %}<img class="avatar" src="{{ m.photo.url }}" alt="Photo de {{ m.nom }}">{% endif %}
+    <div><h1>{{ m.nom }}</h1><div class="m">{{ m.numero }} · {{ m.metier|default:"" }}</div>
+      <p><span class="tag {{ l.etat }}">{% if l.etat == "actif" %}Actif{% elif l.etat == "epuise" %}Épuisé{% elif l.etat == "revoque" %}Révoqué{% else %}Sans forfait{% endif %}</span>
+      {% if l.ouverte %}<span class="tag dans">Dans l'atelier</span>{% endif %}</p></div>
+  </div>
+  <p style="margin:.6rem 0 0"><span class="m">Temps restant</span><br>
+  {% if l.ouverte and l.etat == "actif" %}<span class="time" data-restant="{{ l.restant }}"></span>{% else %}<span class="time">{{ l.restant|duree }}</span>{% endif %}</p>
+</div>
+
+{% if l.etat == "actif" or l.ouverte %}
+<form method="post" action="{% url 'valider' m.pk %}">{% csrf_token %}
+  <input type="hidden" name="next" value="{% url 'accueil' %}">
+  <button class="btn big {% if l.ouverte %}bad{% endif %}" type="submit">{% if l.ouverte %}Valider la sortie{% else %}Valider l'entrée{% endif %}</button>
+</form>
+{% elif l.etat == "revoque" %}
+<div class="msg error">Abonnement révoqué : accès refusé.</div>
+{% else %}
+<div class="msg error">Heures épuisées : le membre doit renouveler son forfait.</div>
+<a class="btn big" href="{% url 'membre_detail' m.pk %}">Ajouter un forfait</a>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "gestion/base.html" %}
+{% block title %}Connexion{% endblock %}
+{% block content %}
+<div class="card" style="max-width:420px;margin:2rem auto">
+  <h1>Connexion</h1>
+  <p class="m">Réservé à l'administrateur et aux responsables de l'atelier.</p>
+  <form method="post">{% csrf_token %}
+    {% if form.errors %}<p class="err">Identifiant ou mot de passe incorrect.</p>{% endif %}
+    <label for="id_username">Identifiant</label>
+    <input id="id_username" name="username" autocomplete="username" autofocus required>
+    <label for="id_password">Mot de passe</label>
+    <input id="id_password" name="password" type="password" autocomplete="current-password" required>
+    <input type="hidden" name="next" value="{{ next }}">
+    <p><button class="btn big" type="submit">Se connecter</button></p>
+  </form>
+</div>
+{% endblock %}

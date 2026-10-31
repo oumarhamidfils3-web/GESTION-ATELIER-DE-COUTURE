@@ -1,0 +1,72 @@
+{% extends "gestion/base.html" %}
+{% load duree %}
+{% block title %}{{ m.nom }}{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="row" style="align-items:flex-start">
+    <div style="display:flex;gap:1rem">
+      {% if m.photo %}<img class="avatar" src="{{ m.photo.url }}" alt="Photo de {{ m.nom }}">{% endif %}
+      <div><h1>{{ m.nom }}</h1>
+        <div class="m">{{ m.numero }} · {{ m.metier|default:"Métier non précisé" }}<br>{{ m.telephone }}</div></div>
+    </div>
+    <div style="text-align:right">
+      <span class="tag {{ l.etat }}">{% if l.etat == "actif" %}Actif{% elif l.etat == "epuise" %}Épuisé{% elif l.etat == "revoque" %}Révoqué{% else %}Sans forfait{% endif %}</span>
+      {% if l.ouverte %}<br><span class="tag dans" style="margin-top:.3rem">Dans l'atelier</span>{% endif %}
+    </div>
+  </div>
+  {% if l.ab %}
+  <p style="margin:1rem 0 0"><span class="m">Temps restant</span><br>
+    {% if l.ouverte and l.etat == "actif" %}<span class="time" data-restant="{{ l.restant }}"></span>{% else %}<span class="time">{{ l.restant|duree }}</span>{% endif %}</p>
+  {% if l.ab.statut == "revoque" %}<p class="m">Révoqué le {{ l.ab.revoque_le|date:"d/m/Y H:i" }}{% if l.ab.motif %} — {{ l.ab.motif }}{% endif %}</p>{% endif %}
+  {% endif %}
+</div>
+
+{% if l.etat == "actif" or l.ouverte %}
+<form method="post" action="{% url 'valider' m.pk %}">{% csrf_token %}
+  <input type="hidden" name="sans_carte" value="1">
+  <button class="btn big" type="submit">{% if l.ouverte %}Valider la sortie{% else %}Valider l'entrée{% endif %} (sans carte)</button>
+</form><br>
+{% endif %}
+
+<div class="grid">
+  <div class="card">
+    <h2>Documents</h2>
+    <p><a class="btn sec" href="{% url 'fiche_pdf' m.pk %}" target="_blank">Fiche d'inscription (PDF)</a></p>
+    <p><a class="btn sec" href="{% url 'carte_pdf' m.pk %}" target="_blank">Carte de membre (PDF)</a></p>
+  </div>
+  <div class="card">
+    <h2>Ajouter un forfait</h2>
+    {% if forfaits %}
+    <form method="post" action="{% url 'membre_forfait' m.pk %}">{% csrf_token %}
+      <select name="forfait" aria-label="Forfait">{% for f in forfaits %}<option value="{{ f.pk }}">{{ f.nom }} — {{ f.heures|floatformat:"-2" }} h — {{ f.prix }} FCFA</option>{% endfor %}</select>
+      <p><button class="btn" type="submit">Enregistrer le paiement</button></p>
+    </form>
+    {% else %}<p class="m">Aucun forfait défini.</p>{% endif %}
+  </div>
+</div>
+
+{% if est_admin and l.ab and l.ab.statut == "actif" %}
+<div class="card" style="border-color:var(--madder)">
+  <h2>Révoquer l'abonnement</h2>
+  <form method="post" action="{% url 'membre_revoquer' m.pk %}">{% csrf_token %}
+    <label for="motif" style="margin-top:0">Motif</label><input id="motif" name="motif" maxlength="200">
+    <p><button class="btn bad" type="submit" onclick="return confirm('Révoquer l’abonnement de {{ m.nom|escapejs }} ? Son accès sera coupé.')">Révoquer</button></p>
+  </form>
+</div>
+{% endif %}
+
+<div class="card"><h2>Séances</h2><div class="scroll"><table>
+<tr><th>Entrée</th><th>Sortie</th><th>Durée utilisée</th><th>Validé par</th></tr>
+{% for s in seances %}
+<tr><td>{{ s.entree_at|date:"d/m H:i" }}</td>
+<td>{% if s.sortie_at %}{{ s.sortie_at|date:"d/m H:i" }}{% else %}en cours{% endif %}</td>
+<td>{{ s.secondes|duree }}{% if s.clos_par_systeme %} (heures épuisées){% endif %}</td>
+<td>{{ s.entree_par.get_full_name|default:s.entree_par.username }}{% if s.entree_sans_carte %}, sans carte{% endif %}</td></tr>
+{% empty %}<tr><td colspan="4" class="m">Aucune séance.</td></tr>{% endfor %}
+</table></div></div>
+
+<div class="card"><h2>Forfaits achetés</h2><div class="scroll"><table>
+<tr><th>Date</th><th>Forfait</th><th>Durée</th><th>Prix</th></tr>
+{% for r in recharges %}<tr><td>{{ r.cree_le|date:"d/m/Y" }}</td><td>{{ r.forfait_nom }}</td><td>{{ r.secondes|duree }}</td><td>{{ r.prix }} FCFA</td></tr>{% endfor %}
+</table></div></div>
+{% endblock %}

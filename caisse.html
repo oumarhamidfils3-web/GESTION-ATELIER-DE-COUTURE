@@ -1,0 +1,43 @@
+{% extends "gestion/base.html" %}
+{% block title %}Caisse{% endblock %}
+{% block content %}
+<div class="row">
+  <h1>Caisse{% if not est_admin %} <span class="m" style="font-size:1rem;font-family:system-ui">(mes encaissements)</span>{% endif %}</h1>
+  {% if est_admin %}<a class="btn sec" href="?date={{ jour|date:'Y-m-d' }}&export=csv">Exporter la journée (CSV)</a>{% endif %}
+</div>
+
+<div class="card row">
+  <a class="btn sec" href="?date={{ veille|date:'Y-m-d' }}" aria-label="Jour précédent">←</a>
+  <form method="get" style="display:flex;gap:.5rem;align-items:center">
+    <input type="date" name="date" value="{{ jour|date:'Y-m-d' }}" max="{{ aujourdhui|date:'Y-m-d' }}" aria-label="Date" style="width:auto">
+    <button class="btn" type="submit">Afficher</button>
+  </form>
+  {% if jour < aujourdhui %}<a class="btn sec" href="?date={{ lendemain|date:'Y-m-d' }}" aria-label="Jour suivant">→</a>{% else %}<span></span>{% endif %}
+</div>
+
+<div class="grid">
+{% for nom, precision, p in periodes %}
+  <div class="card">
+    <div class="m">{{ nom }} · {{ precision }}</div>
+    <div class="time">{{ p.total }} FCFA</div>
+    <div class="m">{{ p.nb }} forfait{{ p.nb|pluralize }} encaissé{{ p.nb|pluralize }}</div>
+  </div>
+{% endfor %}
+</div>
+
+{% if est_admin %}
+<div class="card"><h2>Par responsable</h2><div class="scroll"><table>
+<tr><th>Responsable</th><th>Jour</th><th>Semaine</th></tr>
+{% for r in par_responsable %}<tr><td>{{ r.nom }}</td><td>{{ r.jour }} FCFA</td><td>{{ r.semaine }} FCFA</td></tr>
+{% empty %}<tr><td colspan="3" class="m">Aucun encaissement sur la période.</td></tr>{% endfor %}
+</table></div></div>
+{% endif %}
+
+<div class="card"><h2>Opérations du {{ jour|date:"d/m/Y" }}</h2><div class="scroll"><table>
+<tr><th>Heure</th><th>Membre</th><th>Forfait</th><th>Prix</th>{% if est_admin %}<th>Encaissé par</th>{% endif %}</tr>
+{% for o in operations %}
+<tr><td>{{ o.cree_le|time:"H:i" }}</td><td><a href="{% url 'membre_detail' o.membre.pk %}">{{ o.membre.nom }}</a></td>
+<td>{{ o.forfait_nom }}</td><td>{{ o.prix }} FCFA</td>{% if est_admin %}<td>{{ o.cree_par.get_full_name|default:o.cree_par.username }}</td>{% endif %}</tr>
+{% empty %}<tr><td colspan="5" class="m">Aucune opération ce jour.</td></tr>{% endfor %}
+</table></div></div>
+{% endblock %}

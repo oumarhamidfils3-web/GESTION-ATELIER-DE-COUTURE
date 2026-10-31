@@ -1,0 +1,13 @@
+{% extends "gestion/base.html" %}
+{% block title %}Inscrire un membre{% endblock %}
+{% block content %}
+<h1>Inscrire un membre</h1>
+<form method="post" enctype="multipart/form-data" class="card">{% csrf_token %}
+  {% for f in form %}
+    <label for="{{ f.id_for_label }}">{{ f.label }}</label>
+    {{ f }}
+    {% for e in f.errors %}<div class="err">{{ e }}</div>{% endfor %}
+  {% endfor %}
+  <p><button class="btn big" type="submit">Inscrire et générer la fiche et la carte</button></p>
+</form>
+{% endblock %}

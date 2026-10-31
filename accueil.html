@@ -1,0 +1,53 @@
+{% extends "gestion/base.html" %}
+{% load duree %}
+{% block content %}
+{% if sans_forfait %}
+<div class="msg error">Aucun forfait n'est défini. {% if est_admin %}<a href="/admin/gestion/forfait/add/">Créer un forfait</a>{% else %}Demandez à l'administrateur d'en créer un.{% endif %}</div>
+{% endif %}
+<div class="row"><h1>Dans l'atelier : {{ presents|length }}</h1><a class="btn" href="{% url 'membre_nouveau' %}">Inscrire un membre</a></div>
+
+{% if paiements %}
+<div class="card" style="border-color:var(--ink)">
+  <h2>Paiements à valider ({{ paiements|length }})</h2>
+  {% for p in paiements %}
+  <div class="row" style="padding:.5rem 0;border-bottom:1px solid var(--b)">
+    <div><strong><a href="{% url 'membre_detail' p.membre.pk %}">{{ p.membre.nom }}</a></strong>
+      <div class="m">{{ p.forfait.nom }} · {{ p.forfait.heures|floatformat:"-2" }} h · {{ p.forfait.prix }} FCFA<br>
+      {{ p.get_mode_display }}{% if p.reference %} · réf. {{ p.reference }}{% endif %} · {{ p.cree_le|time:"H:i" }}</div></div>
+    <div style="display:flex;gap:.5rem">
+      <form method="post" action="{% url 'paiement_traiter' p.pk 'valider' %}">{% csrf_token %}<button class="btn" type="submit">Valider</button></form>
+      <form method="post" action="{% url 'paiement_traiter' p.pk 'refuser' %}">{% csrf_token %}<button class="btn sec" type="submit">Refuser</button></form>
+    </div>
+  </div>
+  {% endfor %}
+  <p class="m" style="margin-bottom:0">Validez seulement après avoir reçu l'argent (caisse) ou vérifié le message de confirmation (Orange Money, Mobile Money).</p>
+</div>
+{% endif %}
+
+{% if epuises %}
+<div class="card" style="border-color:var(--madder)">
+  <h2>Heures épuisées — accès coupé</h2>
+  {% for s in epuises %}
+  <p><strong>{{ s.membre.nom }}</strong> a épuisé ses heures à {{ s.sortie_at|time:"H:i" }}.
+  Entrée validée par {{ s.entree_par.get_full_name|default:s.entree_par.username }}.
+  <a href="{% url 'membre_detail' s.membre.pk %}">Ouvrir la fiche</a></p>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% for p in presents %}
+<div class="card">
+  <div class="row">
+    <div><strong><a href="{% url 'membre_detail' p.s.membre.pk %}">{{ p.s.membre.nom }}</a></strong>
+      <div class="m">Entré à {{ p.s.entree_at|time:"H:i" }}, validé par {{ p.s.entree_par.get_full_name|default:p.s.entree_par.username }}{% if p.s.entree_sans_carte %} (sans carte){% endif %}</div></div>
+    <div><div class="m">Temps restant</div><div class="time" data-restant="{{ p.restant }}"></div>
+      {% if p.alerte %}<div class="m" style="color:var(--warn)">Moins de 2 h restantes</div>{% endif %}</div>
+  </div>
+  <form method="post" action="{% url 'valider' p.s.membre.pk %}" style="margin-top:.6rem">{% csrf_token %}
+    <input type="hidden" name="sans_carte" value="1"><input type="hidden" name="next" value="{% url 'accueil' %}">
+    <button class="btn sec" type="submit">Valider la sortie</button></form>
+</div>
+{% empty %}
+<div class="card"><p class="m">Personne n'est dans l'atelier. Scannez une carte de membre avec la caméra du téléphone, ou <a href="{% url 'membres' %}">choisissez un membre dans la liste</a>.</p></div>
+{% endfor %}
+{% endblock %}

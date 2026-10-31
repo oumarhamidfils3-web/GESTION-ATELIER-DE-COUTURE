@@ -1,0 +1,76 @@
+{% extends "gestion/base.html" %}
+{% load duree %}
+{% block title %}Renouveler — {{ ATELIER_NOM }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Renouveler mon abonnement</h1>
+  <p><strong>{{ m.nom }}</strong> · {{ m.numero }}<br>
+  <span class="m">Temps restant : {{ l.restant|duree }}</span></p>
+</div>
+
+{% if l.etat == "revoque" %}
+<div class="msg error">Votre abonnement a été révoqué. Rapprochez-vous de l'administrateur.</div>
+
+{% elif attente %}
+<div class="card" style="border-color:var(--ink)">
+  <h2>Paiement en attente de validation</h2>
+  <p>{{ attente.forfait.nom }} · {{ attente.forfait.heures|floatformat:"-2" }} h · <strong>{{ attente.forfait.prix }} FCFA</strong><br>
+  Mode : {{ attente.get_mode_display }}{% if attente.reference %} · réf. {{ attente.reference }}{% endif %}</p>
+  {% if attente.mode == "caisse" %}
+    <p>Présentez-vous à la caisse de l'atelier et réglez <strong>{{ attente.forfait.prix }} FCFA</strong>. Le responsable validera votre paiement.</p>
+  {% elif attente.mode == "orange" %}
+    <p>Envoyez <strong>{{ attente.forfait.prix }} FCFA</strong> par Orange Money{% if orange %} au <strong>{{ orange }}</strong>{% endif %}. Un responsable vérifiera puis validera.</p>
+  {% else %}
+    <p>Envoyez <strong>{{ attente.forfait.prix }} FCFA</strong> par Mobile Money{% if momo %} au <strong>{{ momo }}</strong>{% endif %}. Un responsable vérifiera puis validera.</p>
+  {% endif %}
+  <p class="m">Cette page se met à jour quand vous la rechargez. Vos heures sont ajoutées dès la validation.</p>
+  <a class="btn sec" href="{% url 'renouveler' m.token %}">Actualiser</a>
+</div>
+
+{% else %}
+{% if dernier and dernier.statut == "valide" %}<div class="msg success">Paiement validé : {{ dernier.forfait.heures|floatformat:"-2" }} h ajoutées à votre abonnement.</div>
+{% elif dernier and dernier.statut == "refuse" %}<div class="msg error">Votre dernier paiement a été refusé. Vous pouvez refaire une demande.</div>{% endif %}
+
+<form method="post" class="card">{% csrf_token %}
+  <h2>1. Choisissez un forfait</h2>
+  {% for f in forfaits %}
+  <label style="display:flex;gap:.7rem;align-items:center;font-weight:500;border:1px solid var(--b);border-radius:8px;padding:.7rem;margin:.4rem 0">
+    <input type="radio" name="forfait" value="{{ f.pk }}" style="width:auto" {% if forloop.first %}checked{% endif %}>
+    <span><strong>{{ f.nom }}</strong> — {{ f.heures|floatformat:"-2" }} h<br><span class="m">{{ f.prix }} FCFA</span></span>
+  </label>
+  {% empty %}<p class="m">Aucun forfait disponible pour le moment.</p>{% endfor %}
+
+  <h2 style="margin-top:1.2rem">2. Choisissez le mode de paiement</h2>
+  {% if mobile_actif %}
+  <label style="display:flex;gap:.7rem;align-items:center;font-weight:500;border:1px solid var(--b);border-radius:8px;padding:.8rem;margin:.4rem 0">
+    <input type="radio" name="mode" value="orange" style="width:auto" required><strong>Orange Money</strong></label>
+  <label style="display:flex;gap:.7rem;align-items:center;font-weight:500;border:1px solid var(--b);border-radius:8px;padding:.8rem;margin:.4rem 0">
+    <input type="radio" name="mode" value="momo" style="width:auto"><strong>Mobile Money</strong></label>
+  {% endif %}
+  <label style="display:flex;gap:.7rem;align-items:center;font-weight:500;border:1px solid var(--b);border-radius:8px;padding:.8rem;margin:.4rem 0">
+    <input type="radio" name="mode" value="caisse" style="width:auto" {% if not mobile_actif %}checked{% endif %}><strong>Caisse</strong> <span class="m">(sur place)</span></label>
+  {% if not mobile_actif %}<p class="m">Le paiement par Orange Money et Mobile Money sera bientôt disponible.</p>{% endif %}
+
+  <div id="bloc-ref" style="display:none">
+    <p class="m" id="consigne"></p>
+    <label for="reference">Référence de la transaction (reçue par SMS)</label>
+    <input id="reference" name="reference" maxlength="60" autocomplete="off">
+  </div>
+  <p><button class="btn big" type="submit">Envoyer ma demande</button></p>
+</form>
+<script>
+(function(){
+  var numeros={orange:"{{ orange|escapejs }}",momo:"{{ momo|escapejs }}"};
+  var noms={orange:"Orange Money",momo:"Mobile Money"};
+  function maj(){
+    var r=document.querySelector('input[name=mode]:checked'); var b=document.getElementById('bloc-ref');
+    if(!r||r.value==='caisse'){b.style.display='none';document.getElementById('reference').required=false;return;}
+    b.style.display='block';document.getElementById('reference').required=true;
+    document.getElementById('consigne').textContent="Envoyez le montant par "+noms[r.value]+(numeros[r.value]?" au "+numeros[r.value]:"")+", puis saisissez la référence ci-dessous.";
+  }
+  document.querySelectorAll('input[name=mode]').forEach(function(i){i.addEventListener('change',maj);});maj();
+})();
+</script>
+{% endif %}
+<p><a href="{% url 'espace_membre' m.token %}">Retour à mon espace</a></p>
+{% endblock %}

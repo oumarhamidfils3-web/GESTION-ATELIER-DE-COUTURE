@@ -1,0 +1,19 @@
+{% extends "gestion/base.html" %}
+{% block title %}Responsables{% endblock %}
+{% block content %}
+<h1>Responsables de l'atelier</h1>
+<div class="card"><h2>Comptes existants</h2>
+{% for p in liste %}
+  <div class="row" style="padding:.4rem 0;border-bottom:1px solid var(--b)">
+    <div><strong>{{ p.user.get_full_name|default:p.user.username }}</strong>
+      <div class="m">{{ p.user.username }}{% if p.telephone %} · {{ p.telephone }}{% endif %}</div></div>
+    <form method="post" action="{% url 'responsable_basculer' p.pk %}">{% csrf_token %}
+      <button class="btn sec" type="submit">{% if p.user.is_active %}Retirer l'accès{% else %}Rétablir l'accès{% endif %}</button></form>
+  </div>
+{% empty %}<p class="m">Aucun responsable pour le moment.</p>{% endfor %}
+</div>
+<form method="post" class="card"><h2>Donner l'accès à un nouveau responsable</h2>{% csrf_token %}
+  {% for f in form %}<label for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}{% for e in f.errors %}<div class="err">{{ e }}</div>{% endfor %}{% endfor %}
+  <p><button class="btn" type="submit">Créer le compte</button></p>
+</form>
+{% endblock %}
