@@ -38,7 +38,7 @@ class Membre(models.Model):
     telephone = models.CharField("Téléphone", max_length=30)
     metier = models.CharField("Métier", max_length=80, blank=True)
     adresse = models.CharField(max_length=160, blank=True)
-    photo = models.ImageField(upload_to="photos/", blank=True)
+    photo_data = models.BinaryField(null=True, blank=True, editable=False)  # JPEG réduit, stocké en base
     token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     cree_le = models.DateTimeField(auto_now_add=True)
     cree_par = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")

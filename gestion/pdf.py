@@ -43,9 +43,9 @@ def _fit(c, text, font, size, maxw):
 
 
 def _photo(c, m, x, y, w, h):
-    if m.photo:
+    if m.photo_data:
         try:
-            c.drawImage(m.photo.path, x, y, w, h, preserveAspectRatio=True, anchor="c", mask="auto")
+            c.drawImage(ImageReader(io.BytesIO(bytes(m.photo_data))), x, y, w, h, preserveAspectRatio=True, anchor="c")
             c.setStrokeColor(INDIGO)
             c.rect(x, y, w, h)
             return

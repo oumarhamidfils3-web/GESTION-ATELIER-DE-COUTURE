@@ -264,3 +264,37 @@ class CaisseTests(AtelierTests):
         self.client.force_login(self.admin)
         r = self.client.get(reverse("caisse") + "?date=2020-01-15")
         self.assertEqual(r.context["periodes"][0][2]["total"], 0)
+
+
+import io  # noqa: E402
+
+from django.core.files.uploadedfile import SimpleUploadedFile  # noqa: E402
+from PIL import Image  # noqa: E402
+
+
+class PhotoTests(AtelierTests):
+    def _image(self):
+        buf = io.BytesIO()
+        Image.new("RGB", (1200, 1600), "navy").save(buf, "PNG")
+        return SimpleUploadedFile("moi.png", buf.getvalue(), content_type="image/png")
+
+    def test_photo_reduite_stockee_en_base_et_servie_aux_responsables(self):
+        self.client.force_login(self.resp)
+        r = self.client.post(reverse("membre_nouveau"), {
+            "nom": "Photo Test", "telephone": "670", "forfait": self.forfait.pk, "photo": self._image()})
+        self.assertEqual(r.status_code, 302)
+        m = Membre.objects.get(nom="Photo Test")
+        self.assertTrue(m.photo_data)
+        img = Image.open(io.BytesIO(bytes(m.photo_data)))
+        self.assertLessEqual(max(img.size), 500)
+        rep = self.client.get(reverse("photo_membre", args=[m.pk]))
+        self.assertEqual(rep["Content-Type"], "image/jpeg")
+        self.assertContains(self.client.get(reverse("membre_detail", args=[m.pk])), "/photo/")
+        for nom in ("fiche_pdf", "carte_pdf"):
+            self.assertTrue(self.client.get(reverse(nom, args=[m.pk])).content.startswith(b"%PDF"))
+        self.client.logout()
+        self.assertEqual(self.client.get(reverse("photo_membre", args=[m.pk])).status_code, 302)  # photo privée
+
+    def test_photo_absente_donne_404(self):
+        self.client.force_login(self.resp)
+        self.assertEqual(self.client.get(reverse("photo_membre", args=[self.m.pk])).status_code, 404)

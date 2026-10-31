@@ -4,7 +4,7 @@
 {% block content %}
 <div class="card">
   <div style="display:flex;gap:1rem;align-items:flex-start">
-    {% if m.photo %}<img class="avatar" src="{{ m.photo.url }}" alt="Photo de {{ m.nom }}">{% endif %}
+    {% if m.photo_data %}<img class="avatar" src="{% url 'photo_membre' m.pk %}" alt="Photo de {{ m.nom }}">{% endif %}
     <div><h1>{{ m.nom }}</h1><div class="m">{{ m.numero }} · {{ m.metier|default:"" }}</div>
       <p><span class="tag {{ l.etat }}">{% if l.etat == "actif" %}Actif{% elif l.etat == "epuise" %}Épuisé{% elif l.etat == "revoque" %}Révoqué{% else %}Sans forfait{% endif %}</span>
       {% if l.ouverte %}<span class="tag dans">Dans l'atelier</span>{% endif %}</p></div>

@@ -2,6 +2,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 
 from .models import Forfait, Membre
+from .photos import reduire_photo
 
 User = get_user_model()
 
@@ -9,10 +10,22 @@ User = get_user_model()
 class MembreForm(forms.ModelForm):
     forfait = forms.ModelChoiceField(Forfait.objects.filter(actif=True), label="Forfait d'heures")
 
+    photo = forms.ImageField(required=False, widget=forms.FileInput(attrs={"accept": "image/*"}))
+
     class Meta:
         model = Membre
-        fields = ["nom", "telephone", "metier", "adresse", "photo"]
-        widgets = {"photo": forms.FileInput(attrs={"accept": "image/*"})}
+        fields = ["nom", "telephone", "metier", "adresse"]
+
+    field_order = ["nom", "telephone", "metier", "adresse", "photo", "forfait"]
+
+    def save(self, commit=True):
+        m = super().save(commit=False)
+        f = self.cleaned_data.get("photo")
+        if f:
+            m.photo_data = reduire_photo(f)
+        if commit:
+            m.save()
+        return m
 
 
 class ResponsableForm(forms.Form):

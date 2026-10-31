@@ -5,7 +5,7 @@
 <div class="card">
   <div class="row" style="align-items:flex-start">
     <div style="display:flex;gap:1rem">
-      {% if m.photo %}<img class="avatar" src="{{ m.photo.url }}" alt="Photo de {{ m.nom }}">{% endif %}
+      {% if m.photo_data %}<img class="avatar" src="{% url 'photo_membre' m.pk %}" alt="Photo de {{ m.nom }}">{% endif %}
       <div><h1>{{ m.nom }}</h1>
         <div class="m">{{ m.numero }} · {{ m.metier|default:"Métier non précisé" }}<br>{{ m.telephone }}</div></div>
     </div>

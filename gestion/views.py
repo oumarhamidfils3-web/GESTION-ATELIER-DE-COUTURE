@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.views import redirect_to_login
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q, Sum
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -121,6 +121,16 @@ def membre_detail(request, pk):
         "forfaits": Forfait.objects.filter(actif=True),
         "url_scan": pdf.url_membre(m),
     })
+
+
+@responsable_requis
+def photo_membre(request, pk):
+    m = get_object_or_404(Membre, pk=pk)
+    if not m.photo_data:
+        raise Http404
+    rep = HttpResponse(bytes(m.photo_data), content_type="image/jpeg")
+    rep["Cache-Control"] = "private, max-age=3600"
+    return rep
 
 
 @responsable_requis
