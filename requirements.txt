@@ -1,5 +1,5 @@
 Django==5.0.6
 gunicorn
 whitenoise
-dj-database-url
+dj-datanabase-url
 Pillow
