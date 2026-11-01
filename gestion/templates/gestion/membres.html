@@ -8,8 +8,8 @@
 {% for l in lignes %}
 <div class="card">
   <div class="row">
-    <div><strong><a href="{% url 'membre_detail' l.m.pk %}">{{ l.m.nom }}</a></strong>
-      <div class="m">{{ l.m.numero }} · {{ l.m.metier|default:"Métier non précisé" }}</div></div>
+    <div class="who"><span class="ini">{{ l.m.nom|initiales }}</span><div><strong><a href="{% url 'membre_detail' l.m.pk %}">{{ l.m.nom }}</a></strong>
+      <div class="m">{{ l.m.numero }} · {{ l.m.metier|default:"Métier non précisé" }}</div></div></div>
     <div>
       {% if l.ouverte %}<span class="tag dans">Dans l'atelier</span>{% endif %}
       <span class="tag {{ l.etat }}">{% if l.etat == "actif" %}{{ l.restant|duree }} restantes{% elif l.etat == "epuise" %}Épuisé{% elif l.etat == "revoque" %}Révoqué{% else %}Sans forfait{% endif %}</span>

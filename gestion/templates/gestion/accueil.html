@@ -1,10 +1,32 @@
 {% extends "gestion/base.html" %}
 {% load duree %}
+{% block head %}<meta http-equiv="refresh" content="20">{% endblock %}
 {% block content %}
 {% if sans_forfait %}
 <div class="msg error">Aucun forfait n'est défini. {% if est_admin %}<a href="/admin/gestion/forfait/add/">Créer un forfait</a>{% else %}Demandez à l'administrateur d'en créer un.{% endif %}</div>
 {% endif %}
-<div class="row"><h1>Dans l'atelier : {{ presents|length }}</h1><a class="btn" href="{% url 'membre_nouveau' %}">Inscrire un membre</a></div>
+<div class="row" style="margin-bottom:.8rem"><h1 style="margin:0">Tableau de bord</h1><a class="btn" href="{% url 'membre_nouveau' %}">Inscrire un membre</a></div>
+<div class="stats">
+  <div class="stat"><b>{{ presents|length }}</b><span>Dans l'atelier</span></div>
+  <div class="stat{% if demandes %} alert{% endif %}"><b>{{ demandes|length }}</b><span>Demandes à valider</span></div>
+  <div class="stat{% if paiements %} alert{% endif %}"><b>{{ paiements|length }}</b><span>Paiements à valider</span></div>
+</div>
+
+{% if demandes %}
+<div class="card" style="border-color:var(--ink2)">
+  <h2>Demandes des membres ({{ demandes|length }})</h2>
+  {% for d in demandes %}
+  <div class="row" style="padding:.5rem 0;border-bottom:1px solid var(--b)">
+    <div><strong><a href="{% url 'membre_detail' d.membre.pk %}">{{ d.membre.nom }}</a></strong>
+      <div class="m">{% if d.type == "entree" %}Demande d'entrée{% else %}Demande de sortie{% endif %} · {{ d.cree_le|time:"H:i" }}</div></div>
+    <div style="display:flex;gap:.5rem">
+      <form method="post" action="{% url 'demande_traiter' d.pk 'valider' %}">{% csrf_token %}<button class="btn" type="submit">Valider</button></form>
+      <form method="post" action="{% url 'demande_traiter' d.pk 'refuser' %}">{% csrf_token %}<button class="btn sec" type="submit">Refuser</button></form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 {% if paiements %}
 <div class="card" style="border-color:var(--ink)">
@@ -50,4 +72,5 @@
 {% empty %}
 <div class="card"><p class="m">Personne n'est dans l'atelier. Scannez une carte de membre avec la caméra du téléphone, ou <a href="{% url 'membres' %}">choisissez un membre dans la liste</a>.</p></div>
 {% endfor %}
+<p class="m"><a href="{% url 'affiche_pdf' %}" target="_blank">Affiche du QR code d'entrée (PDF)</a> — à imprimer et à placer à l'entrée de l'atelier. Cette page s'actualise toute seule.</p>
 {% endblock %}

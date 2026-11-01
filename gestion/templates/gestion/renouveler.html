@@ -24,7 +24,7 @@
     <p>Envoyez <strong>{{ attente.forfait.prix }} FCFA</strong> par Mobile Money{% if momo %} au <strong>{{ momo }}</strong>{% endif %}. Un responsable vérifiera puis validera.</p>
   {% endif %}
   <p class="m">Cette page se met à jour quand vous la rechargez. Vos heures sont ajoutées dès la validation.</p>
-  <a class="btn sec" href="{% url 'renouveler' m.token %}">Actualiser</a>
+  <a class="btn sec" href="{% url 'espace_renouveler' %}">Actualiser</a>
 </div>
 
 {% else %}
@@ -72,5 +72,5 @@
 })();
 </script>
 {% endif %}
-<p><a href="{% url 'espace_membre' m.token %}">Retour à mon espace</a></p>
+<p><a href="{% url 'espace' %}">Retour au menu</a></p>
 {% endblock %}

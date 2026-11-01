@@ -1,0 +1,18 @@
+{% extends "gestion/base.html" %}
+{% block title %}Mon mot de passe — {{ ATELIER_NOM }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:460px;margin:1rem auto">
+  <h1>Changer mon mot de passe</h1>
+  <p class="m">{{ m.nom }} · {{ m.numero }}</p>
+  <form method="post">{% csrf_token %}
+    <label for="actuel">Mot de passe actuel</label>
+    <input id="actuel" name="actuel" type="password" autocomplete="current-password" required>
+    <label for="nouveau">Nouveau mot de passe (6 caractères minimum)</label>
+    <input id="nouveau" name="nouveau" type="password" autocomplete="new-password" minlength="6" required>
+    <label for="confirmation">Confirmer le nouveau mot de passe</label>
+    <input id="confirmation" name="confirmation" type="password" autocomplete="new-password" minlength="6" required>
+    <p><button class="btn big" type="submit">Enregistrer</button></p>
+  </form>
+  <a class="btn sec" href="{% url 'espace' %}">Retour</a>
+</div>
+{% endblock %}

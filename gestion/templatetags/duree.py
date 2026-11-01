@@ -11,3 +11,11 @@ def duree(sec):
         return "—"
     h, r = divmod(sec, 3600)
     return f"{h} h {r // 60:02d} min"
+
+
+@register.filter
+def initiales(nom):
+    mots = [m for m in (nom or "").split() if m]
+    if not mots:
+        return "?"
+    return (mots[0][0] + (mots[-1][0] if len(mots) > 1 else "")).upper()

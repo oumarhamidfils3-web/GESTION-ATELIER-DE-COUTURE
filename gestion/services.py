@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
-from .models import Abonnement, Recharge, Seance
+from .models import Abonnement, Demande, Membre, Recharge, Seance
 
 
 class ErreurAtelier(Exception):
@@ -28,6 +28,11 @@ def _clore(seance, ab, par, quand, sans_carte=False, systeme=False):
     ab.save()
 
 
+def _solder_demandes(membre, type_, par):
+    membre.demandes.filter(statut=Demande.ATTENTE, type=type_).update(
+        statut=Demande.VALIDEE, traite_par=par, traite_le=timezone.now())
+
+
 @transaction.atomic
 def valider_entree(membre, par, sans_carte=False):
     if membre.seance_ouverte():
@@ -40,10 +45,12 @@ def valider_entree(membre, par, sans_carte=False):
         raise ErreurAtelier("Heures épuisées : le membre doit renouveler son forfait.")
     if ab.restant_s() <= 0:
         raise ErreurAtelier("Heures épuisées : le membre doit renouveler son forfait.")
-    return Seance.objects.create(
+    seance = Seance.objects.create(
         membre=membre, abonnement=ab, entree_at=timezone.now(),
         entree_par=par, entree_sans_carte=sans_carte,
     )
+    _solder_demandes(membre, Demande.ENTREE, par)
+    return seance
 
 
 @transaction.atomic
@@ -52,6 +59,7 @@ def valider_sortie(membre, par, sans_carte=False):
     if s is None:
         raise ErreurAtelier(f"{membre.nom} n'est pas dans l'atelier.")
     _clore(s, s.abonnement, par, timezone.now(), sans_carte)
+    _solder_demandes(membre, Demande.SORTIE, par)
     return s
 
 
@@ -206,7 +214,7 @@ def traiter_alertes():
             duree = f"{h} h {r // 60:02d} min"
             _diffuser(
                 al, s.membre, s.entree_par,
-                f"{settings.ATELIER_NOM} : il vous reste {duree} d'abonnement. Pensez à renouveler : {settings.SITE_URL}/m/{s.membre.token}/renouveler/",
+                f"{settings.ATELIER_NOM} : il vous reste {duree} d'abonnement. Pensez à renouveler : {settings.SITE_URL}/m/{s.membre.token}/?suite=renouveler",
                 f"{settings.ATELIER_NOM} : {s.membre.nom} ({s.membre.numero}) n'a plus que {duree} d'abonnement.",
             )
             nb += 1
@@ -221,8 +229,102 @@ def traiter_alertes():
         derniere = ab.seances.select_related("entree_par").first()
         _diffuser(
             al, ab.membre, derniere.entree_par if derniere else None,
-            f"{settings.ATELIER_NOM} : vos heures sont épuisées, l'accès est coupé. Renouvelez : {settings.SITE_URL}/m/{ab.membre.token}/renouveler/",
+            f"{settings.ATELIER_NOM} : vos heures sont épuisées, l'accès est coupé. Renouvelez : {settings.SITE_URL}/m/{ab.membre.token}/?suite=renouveler",
             f"{settings.ATELIER_NOM} : {ab.membre.nom} ({ab.membre.numero}) a épuisé ses heures. Accès coupé.",
         )
         nb += 1
     return nb
+
+
+# ------------------------------------------------- accès du membre (téléphone)
+import re  # noqa: E402
+
+MAX_ECHECS = 5
+DUREE_BLOCAGE = timedelta(minutes=15)
+
+
+def trouver_membre_par_numero(texte):
+    """Accepte « AT-0007 », « at 7 », « 7 »."""
+    chiffres = re.sub(r"\D", "", texte or "")
+    if not chiffres:
+        return None
+    return Membre.objects.filter(numero=f"AT-{int(chiffres):04d}").first()
+
+
+def connexion_membre(membre, pin):
+    """Vérifie le code personnel. Après 5 erreurs, le compte est bloqué 15 minutes."""
+    now = timezone.now()
+    if membre.pin_bloque_jusqua and membre.pin_bloque_jusqua > now:
+        raise ErreurAtelier("Trop d'essais. Réessayez dans quelques minutes ou demandez un nouveau code à un responsable.")
+    if membre.verifier_pin(pin):
+        if membre.pin_echecs:
+            membre.pin_echecs = 0
+            membre.save(update_fields=["pin_echecs"])
+        return True
+    membre.pin_echecs += 1
+    if membre.pin_echecs >= MAX_ECHECS:
+        membre.pin_echecs = 0
+        membre.pin_bloque_jusqua = now + DUREE_BLOCAGE
+    membre.save(update_fields=["pin_echecs", "pin_bloque_jusqua"])
+    return False
+
+
+@transaction.atomic
+def demander_entree(membre):
+    cloturer_depassements()
+    if membre.seance_ouverte():
+        raise ErreurAtelier("Vous êtes déjà dans l'atelier.")
+    if membre.demande_en_attente():
+        raise ErreurAtelier("Une demande est déjà en attente de validation.")
+    ab = membre.abonnement_actif()
+    if ab is None:
+        cour = membre.abonnement_courant()
+        if cour and cour.statut == Abonnement.REVOQUE:
+            raise ErreurAtelier("Votre abonnement est révoqué. Rapprochez-vous de l'administrateur.")
+        raise ErreurAtelier("Vos heures sont épuisées : renouvelez votre forfait.")
+    if ab.restant_s() <= 0:
+        raise ErreurAtelier("Vos heures sont épuisées : renouvelez votre forfait.")
+    return Demande.objects.create(membre=membre, type=Demande.ENTREE)
+
+
+@transaction.atomic
+def demander_sortie(membre):
+    cloturer_depassements()
+    if not membre.seance_ouverte():
+        raise ErreurAtelier("Vous n'êtes pas dans l'atelier.")
+    if membre.demande_en_attente():
+        raise ErreurAtelier("Une demande est déjà en attente de validation.")
+    return Demande.objects.create(membre=membre, type=Demande.SORTIE)
+
+
+def annuler_demande(membre):
+    n = membre.demandes.filter(statut=Demande.ATTENTE).update(statut=Demande.ANNULEE, traite_le=timezone.now())
+    return n > 0
+
+
+@transaction.atomic
+def traiter_demande(demande, par, accepter):
+    """Un responsable ou l'administrateur valide ou refuse la demande du membre.
+    Entrée : le compteur démarre à la validation. Sortie : il s'arrête à l'heure où le membre a scanné."""
+    d = Demande.objects.select_for_update().select_related("membre").get(pk=demande.pk)
+    if d.statut != Demande.ATTENTE:
+        raise ErreurAtelier("Cette demande a déjà été traitée.")
+    now = timezone.now()
+    if not accepter:
+        d.statut, d.traite_par, d.traite_le = Demande.REFUSEE, par, now
+        d.save()
+        return d
+    m = d.membre
+    if d.type == Demande.ENTREE:
+        valider_entree(m, par)  # lève une erreur si refusé (révoqué, épuisé, déjà dans l'atelier)
+    else:
+        s = m.seance_ouverte()
+        if s is None:  # déjà clôturée (heures épuisées) : rien à faire
+            d.statut, d.traite_le = Demande.ANNULEE, now
+            d.save()
+            return d
+        _clore(s, s.abonnement, par, max(d.cree_le, s.entree_at))
+    d.refresh_from_db()
+    d.statut, d.traite_par, d.traite_le = Demande.VALIDEE, par, now
+    d.save()
+    return d

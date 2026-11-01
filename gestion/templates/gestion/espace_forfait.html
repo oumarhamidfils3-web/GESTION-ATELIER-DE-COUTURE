@@ -1,21 +1,21 @@
 {% extends "gestion/base.html" %}
 {% load duree %}
-{% block title %}Mon espace — {{ ATELIER_NOM }}{% endblock %}
+{% block title %}Mon forfait — {{ ATELIER_NOM }}{% endblock %}
 {% block content %}
 <div class="card">
-  <h1>{{ m.nom }}</h1>
-  <p class="m">{{ m.numero }}{% if m.metier %} · {{ m.metier }}{% endif %}</p>
+  <h1>Mon forfait</h1>
+  <p class="m">{{ m.nom }} · {{ m.numero }}</p>
   <p><span class="tag {{ l.etat }}">{% if l.etat == "actif" %}Abonnement actif{% elif l.etat == "epuise" %}Heures épuisées{% elif l.etat == "revoque" %}Abonnement révoqué{% else %}Sans forfait{% endif %}</span>
   {% if l.ouverte %}<span class="tag dans">Dans l'atelier</span>{% endif %}</p>
   <p class="m" style="margin-bottom:0">Temps restant</p>
-  {% if l.ouverte and l.etat == "actif" %}<div class="time" data-restant="{{ l.restant }}"></div>{% else %}<div class="time">{{ l.restant|duree }}</div>{% endif %}
+  {% if l.ouverte and l.etat == "actif" %}<div class="time" data-restant="{{ l.restant }}" data-total="{{ l.total_s }}" data-bar="barre"></div>{% else %}<div class="time">{{ l.restant|duree }}</div>{% endif %}
+  <div class="bar{% if l.restant <= 7200 %} low{% endif %}" id="barre" aria-hidden="true"><i style="width:{{ l.pct }}%"></i></div>
   <p class="m">Consommé : {{ consomme|duree }} sur {{ total|duree }}</p>
-  {% if l.etat == "epuise" or l.etat == "actif" %}<a class="btn" href="{% url 'renouveler' m.token %}">Renouveler mon abonnement</a>{% endif %}
 </div>
 <div class="card"><h2>Mes séances</h2><div class="scroll"><table>
 <tr><th>Entrée</th><th>Sortie</th><th>Durée</th></tr>
 {% for s in seances %}<tr><td>{{ s.entree_at|date:"d/m H:i" }}</td><td>{% if s.sortie_at %}{{ s.sortie_at|date:"H:i" }}{% else %}en cours{% endif %}</td><td>{{ s.secondes|duree }}</td></tr>
 {% empty %}<tr><td colspan="3" class="m">Aucune séance pour le moment.</td></tr>{% endfor %}
 </table></div></div>
-<p class="m"><a href="{% url 'connexion' %}?next={% url 'scan' m.token %}">Accès responsable</a></p>
+<p><a class="btn sec" href="{% url 'espace' %}">Retour au menu</a></p>
 {% endblock %}

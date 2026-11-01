@@ -78,7 +78,8 @@ LOGOUT_REDIRECT_URL = "/connexion/"
 
 # Adresse publique de l'application : c'est elle qui est encodée dans les QR codes.
 SITE_URL = (os.environ.get("SITE_URL") or _RENDER_URL or "http://127.0.0.1:8000").rstrip("/")
-ATELIER_NOM = os.environ.get("ATELIER_NOM", "Atelier de couture")
+ATELIER_NOM = os.environ.get("ATELIER_NOM", "Atelier de couture ADDC")
+ATELIER_SOUS_TITRE = os.environ.get("ATELIER_SOUS_TITRE", "Action pour le Développement Durable au Cameroun")
 
 # Tant que le contrat Orange Money / Mobile Money n'est pas signé : laisser à 0 (caisse uniquement).
 PAIEMENT_MOBILE_ACTIF = os.environ.get("PAIEMENT_MOBILE_ACTIF", "0") == "1"

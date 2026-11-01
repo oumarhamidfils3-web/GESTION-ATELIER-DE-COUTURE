@@ -1,0 +1,23 @@
+{% extends "gestion/base.html" %}
+{% load static %}
+{% block title %}Espace membre — {{ ATELIER_NOM }}{% endblock %}
+{% block content %}
+<div class="card hero" style="max-width:440px;margin:1.2rem auto;text-align:left">
+  <div style="text-align:center"><span class="logo"><img src="{% static 'gestion/logo.png' %}" alt="Logo ADDC" width="84" height="84"></span><h1>{{ ATELIER_NOM }}</h1>
+  <p class="m" style="margin-bottom:.2rem">{{ ATELIER_SOUS_TITRE }}</p><p class="m">Espace membre</p></div>
+  <p class="m" style="text-align:center">Connectez-vous avec votre numéro de membre et votre mot de passe. Vous ne verrez que votre propre compte.</p>
+  <form method="post">{% csrf_token %}
+    {% if par_numero %}
+    <label for="numero">Numéro de membre</label>
+    <input id="numero" name="numero" inputmode="text" placeholder="AT-0007" value="{{ numero }}" required autofocus>
+    {% else %}
+    <p style="text-align:center"><strong>Carte {{ numero }}</strong></p>
+    {% endif %}
+    <label for="code">Mot de passe</label>
+    <input id="code" name="code" type="password" maxlength="128" autocomplete="current-password" required {% if not par_numero %}autofocus{% endif %}>
+    <p><button class="btn big" type="submit">Se connecter</button></p>
+  </form>
+  <p class="m" style="text-align:center;margin-bottom:0">Mot de passe oublié ? Demandez-en un nouveau à un responsable de l'atelier.</p>
+</div>
+<p class="m" style="text-align:center"><a href="{% url 'connexion' %}">Accès responsable</a></p>
+{% endblock %}

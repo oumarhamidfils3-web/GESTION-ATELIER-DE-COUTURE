@@ -21,6 +21,15 @@
   {% endif %}
 </div>
 
+{% if pin %}
+<div class="card" style="border-color:var(--madder)">
+  <h2>Mot de passe provisoire du membre</h2>
+  <p class="time" style="color:var(--madder)">{{ pin }}</p>
+  <p class="m">Remettez-le au membre (il est imprimé sur la fiche d'inscription) ; il pourra le changer depuis son espace. Il ne sera plus affiché après avoir masqué ce message : il faudra alors en créer un nouveau.</p>
+  <form method="post" action="{% url 'membre_pin_masquer' m.pk %}">{% csrf_token %}<button class="btn sec" type="submit">J'ai remis le mot de passe, masquer</button></form>
+</div>
+{% endif %}
+
 {% if l.etat == "actif" or l.ouverte %}
 <form method="post" action="{% url 'valider' m.pk %}">{% csrf_token %}
   <input type="hidden" name="sans_carte" value="1">
@@ -33,6 +42,8 @@
     <h2>Documents</h2>
     <p><a class="btn sec" href="{% url 'fiche_pdf' m.pk %}" target="_blank">Fiche d'inscription (PDF)</a></p>
     <p><a class="btn sec" href="{% url 'carte_pdf' m.pk %}" target="_blank">Carte de membre (PDF)</a></p>
+    <form method="post" action="{% url 'membre_pin' m.pk %}">{% csrf_token %}
+      <button class="btn sec" type="submit" onclick="return confirm('Créer un nouveau mot de passe pour {{ m.nom|escapejs }} ? L’ancien ne marchera plus.')">Nouveau mot de passe provisoire</button></form>
   </div>
   <div class="card">
     <h2>Ajouter un forfait</h2>

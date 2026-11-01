@@ -1,9 +1,10 @@
 {% extends "gestion/base.html" %}
-{% block title %}Connexion{% endblock %}
+{% load static %}
+{% block title %}Connexion — {{ ATELIER_NOM }}{% endblock %}
 {% block content %}
-<div class="card" style="max-width:420px;margin:2rem auto">
-  <h1>Connexion</h1>
-  <p class="m">Réservé à l'administrateur et aux responsables de l'atelier.</p>
+<div class="card hero" style="max-width:440px;margin:1.2rem auto;text-align:left">
+  <div style="text-align:center"><span class="logo"><img src="{% static 'gestion/logo.png' %}" alt="Logo ADDC" width="84" height="84"></span><h1>Connexion</h1>
+  <p class="m">Réservé à l'administrateur et aux responsables de l'atelier.</p></div>
   <form method="post">{% csrf_token %}
     {% if form.errors %}<p class="err">Identifiant ou mot de passe incorrect.</p>{% endif %}
     <label for="id_username">Identifiant</label>
@@ -13,5 +14,6 @@
     <input type="hidden" name="next" value="{{ next }}">
     <p><button class="btn big" type="submit">Se connecter</button></p>
   </form>
+  <p class="m" style="text-align:center;margin-bottom:0"><a href="{% url 'atelier_acces' %}">Je suis membre</a></p>
 </div>
 {% endblock %}

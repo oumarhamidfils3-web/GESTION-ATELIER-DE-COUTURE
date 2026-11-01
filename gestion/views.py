@@ -17,7 +17,7 @@ from django.views.decorators.http import require_POST
 
 from . import pdf, services
 from .forms import MembreForm, ResponsableForm
-from .models import Abonnement, Forfait, Membre, Paiement, Profil, Recharge, Seance
+from .models import Abonnement, Demande, Forfait, Membre, Paiement, Profil, Recharge, Seance
 
 User = get_user_model()
 
@@ -63,14 +63,23 @@ def _retour(request, defaut):
 def _ligne(m):
     ab = m.abonnement_courant()
     ouverte = m.seance_ouverte()
+    restant = ab.restant_s() if ab else 0
+    total = ab.total_s if ab else 0
     return {
         "m": m, "ab": ab, "etat": m.etat, "ouverte": ouverte,
-        "restant": ab.restant_s() if ab else 0,
+        "restant": restant, "total_s": total,
+        "pct": max(0, min(100, int(100 * restant / total))) if total else 0,
     }
 
 
-@responsable_requis
 def accueil(request):
+    """Page d'accueil : tableau de bord pour un responsable, menu pour un membre, choix de connexion sinon."""
+    if not request.user.is_authenticated:
+        if _membre_connecte(request):
+            return redirect("espace")
+        return render(request, "gestion/bienvenue.html")
+    if not est_responsable(request.user):
+        raise PermissionDenied
     services.cloturer_depassements()
     now = timezone.now()
     ouvertes = (Seance.objects.filter(sortie_at__isnull=True)
@@ -81,6 +90,7 @@ def accueil(request):
                .select_related("membre", "entree_par").order_by("-sortie_at"))
     return render(request, "gestion/accueil.html", {
         "presents": presents, "epuises": epuises,
+        "demandes": Demande.objects.filter(statut=Demande.ATTENTE).select_related("membre").order_by("cree_le"),
         "paiements": Paiement.objects.filter(statut=Paiement.ATTENTE).select_related("membre", "forfait").order_by("cree_le"),
         "nb_membres": Membre.objects.count(),
         "sans_forfait": not Forfait.objects.filter(actif=True).exists(),
@@ -103,7 +113,10 @@ def membre_nouveau(request):
     if request.method == "POST" and form.is_valid():
         m = form.save(commit=False)
         m.cree_par = request.user
+        pin = _nouveau_pin()
+        m.definir_pin(pin)
         m.save()
+        request.session[f"pin_{m.pk}"] = pin
         services.ajouter_forfait(m, form.cleaned_data["forfait"], request.user)
         messages.success(request, f"{m.nom} est inscrit(e) sous le numéro {m.numero}.")
         return redirect("membre_detail", pk=m.pk)
@@ -120,6 +133,7 @@ def membre_detail(request, pk):
         "recharges": m.recharges.order_by("-cree_le")[:10],
         "forfaits": Forfait.objects.filter(actif=True),
         "url_scan": pdf.url_membre(m),
+        "pin": request.session.get(f"pin_{m.pk}"),
     })
 
 
@@ -136,7 +150,7 @@ def photo_membre(request, pk):
 @responsable_requis
 def fiche_pdf(request, pk):
     m = get_object_or_404(Membre, pk=pk)
-    rep = HttpResponse(pdf.fiche_pdf(m), content_type="application/pdf")
+    rep = HttpResponse(pdf.fiche_pdf(m, pin=request.session.get(f"pin_{m.pk}")), content_type="application/pdf")
     rep["Content-Disposition"] = f'inline; filename="fiche-{m.numero}.pdf"'
     return rep
 
@@ -198,25 +212,148 @@ def scan(request, token):
     """Cible du QR de la carte. Le responsable valide ; toute autre personne voit son espace membre."""
     m = get_object_or_404(Membre, token=token)
     if not est_responsable(request.user):
-        return redirect("espace_membre", token=token)
+        return redirect("membre_acces", token=token)
     services.cloturer_depassements()
     return render(request, "gestion/scan.html", {"l": _ligne(m), "m": m})
 
 
-def espace_membre(request, token):
-    services.cloturer_depassements()
+# ------------------------------------------------------------ espace du membre
+SUITES = {"renouveler": "espace_renouveler", "forfait": "espace_forfait"}
+
+
+def _membre_connecte(request):
+    mid = request.session.get("membre_id")
+    return Membre.objects.filter(pk=mid).first() if mid else None
+
+
+def membre_requis(view):
+    """Réservé au membre identifié (numéro + code) sur ce téléphone ; il n'accède jamais qu'à son propre compte."""
+    @wraps(view)
+    def wrapper(request, *a, **k):
+        m = _membre_connecte(request)
+        if m is None:
+            return redirect("atelier_acces")
+        return view(request, m, *a, **k)
+    return wrapper
+
+
+def _ouvrir_session_membre(request, m):
+    request.session.cycle_key()
+    request.session["membre_id"] = m.pk
+    request.session.set_expiry(60 * 24 * 3600)
+
+
+def _tenter_connexion(request, m, pin):
+    try:
+        if m is not None and services.connexion_membre(m, pin.strip()):
+            _ouvrir_session_membre(request, m)
+            return True
+        messages.error(request, "Numéro ou code incorrect.")
+    except services.ErreurAtelier as e:
+        messages.error(request, str(e))
+    return False
+
+
+def atelier_acces(request):
+    """Page ouverte par le QR code affiché à l'entrée de l'atelier."""
+    if est_responsable(request.user):
+        return redirect("accueil")
+    if _membre_connecte(request):
+        return redirect("espace")
+    if request.method == "POST":
+        m = services.trouver_membre_par_numero(request.POST.get("numero", ""))
+        if _tenter_connexion(request, m, request.POST.get("code", "")):
+            return redirect("espace")
+    return render(request, "gestion/acces.html", {"par_numero": True, "numero": request.POST.get("numero", "")})
+
+
+def membre_acces(request, token):
+    """Cible du QR code de la carte : le numéro est connu, le membre saisit seulement son code."""
     m = get_object_or_404(Membre, token=token)
+    suite = SUITES.get(request.GET.get("suite", ""), "espace")
+    if _membre_connecte(request) == m:
+        return redirect(suite)
+    if request.method == "POST" and _tenter_connexion(request, m, request.POST.get("code", "")):
+        return redirect(suite)
+    return render(request, "gestion/acces.html", {"par_numero": False, "numero": m.numero})
+
+
+@membre_requis
+def espace(request, m):
+    services.cloturer_depassements()
     l = _ligne(m)
-    return render(request, "gestion/espace_membre.html", {
-        "l": l, "m": m, "seances": m.seances.all()[:20],
-        "total": l["ab"].total_s if l["ab"] else 0,
-        "consomme": (l["ab"].total_s - l["restant"]) if l["ab"] else 0,
+    return render(request, "gestion/espace_menu.html", {
+        "m": m, "l": l, "attente": m.demande_en_attente(),
+        "dans": bool(l["ouverte"]), "peut_entrer": l["etat"] == "actif" and not l["ouverte"],
     })
 
 
-def renouveler(request, token):
-    """Page ouverte par le QR de renouvellement : le membre choisit son forfait et son mode de paiement."""
-    m = get_object_or_404(Membre, token=token)
+@membre_requis
+def espace_forfait(request, m):
+    services.cloturer_depassements()
+    l = _ligne(m)
+    total = l["ab"].total_s if l["ab"] else 0
+    return render(request, "gestion/espace_forfait.html", {
+        "m": m, "l": l, "seances": m.seances.all()[:20], "total": total,
+        "consomme": (total - l["restant"]) if l["ab"] else 0,
+    })
+
+
+@membre_requis
+@require_POST
+def espace_demande(request, m, type_):
+    try:
+        if type_ == "entree":
+            services.demander_entree(m)
+        else:
+            services.demander_sortie(m)
+        messages.success(request, "Demande envoyée. Un responsable doit la valider.")
+    except services.ErreurAtelier as e:
+        messages.error(request, str(e))
+    return redirect("espace")
+
+
+@membre_requis
+@require_POST
+def espace_annuler(request, m):
+    services.annuler_demande(m)
+    messages.success(request, "Demande annulée.")
+    return redirect("espace")
+
+
+@membre_requis
+def espace_mot_de_passe(request, m):
+    """Le membre remplace le mot de passe provisoire remis à l'inscription par le sien."""
+    if request.method == "POST":
+        actuel = request.POST.get("actuel", "")
+        nouveau = request.POST.get("nouveau", "")
+        try:
+            if nouveau != request.POST.get("confirmation", ""):
+                messages.error(request, "Les deux mots de passe ne sont pas identiques.")
+            elif len(nouveau) < 6:
+                messages.error(request, "Le nouveau mot de passe doit avoir au moins 6 caractères.")
+            elif not services.connexion_membre(m, actuel):
+                messages.error(request, "Mot de passe actuel incorrect.")
+            else:
+                m.definir_pin(nouveau)
+                m.save(update_fields=["pin_hash", "pin_echecs", "pin_bloque_jusqua"])
+                messages.success(request, "Votre mot de passe a été changé.")
+                return redirect("espace")
+        except services.ErreurAtelier as e:
+            messages.error(request, str(e))
+    return render(request, "gestion/espace_mot_de_passe.html", {"m": m})
+
+
+@membre_requis
+@require_POST
+def espace_quitter(request, m):
+    request.session.pop("membre_id", None)
+    return redirect("atelier_acces")
+
+
+@membre_requis
+def espace_renouveler(request, m):
+    """Le membre choisit son forfait et son mode de paiement ; un responsable valide ensuite le paiement."""
     forfaits = Forfait.objects.filter(actif=True)
     if request.method == "POST":
         f = forfaits.filter(pk=request.POST.get("forfait")).first()
@@ -225,7 +362,7 @@ def renouveler(request, token):
                 raise services.ErreurAtelier("Choisissez un forfait.")
             services.demander_renouvellement(m, f, request.POST.get("mode", ""), request.POST.get("reference", ""))
             messages.success(request, "Demande envoyée. Un responsable va valider votre paiement.")
-            return redirect("renouveler", token=token)
+            return redirect("espace_renouveler")
         except services.ErreurAtelier as e:
             messages.error(request, str(e))
     return render(request, "gestion/renouveler.html", {
@@ -236,6 +373,7 @@ def renouveler(request, token):
     })
 
 
+# ----------------------------------- côté responsable : paiements, demandes, code, affiche
 @responsable_requis
 @require_POST
 def paiement_traiter(request, pk, action):
@@ -250,6 +388,51 @@ def paiement_traiter(request, pk, action):
     except services.ErreurAtelier as e:
         messages.error(request, str(e))
     return _retour(request, reverse("accueil"))
+
+
+
+@responsable_requis
+@require_POST
+def demande_traiter(request, pk, action):
+    d = get_object_or_404(Demande, pk=pk)
+    try:
+        services.traiter_demande(d, request.user, accepter=(action == "valider"))
+        verbe = "validée" if action == "valider" else "refusée"
+        messages.success(request, f"Demande de {d.membre.nom} {verbe}.")
+    except services.ErreurAtelier as e:
+        messages.error(request, str(e))
+    return _retour(request, reverse("accueil"))
+
+
+@responsable_requis
+@require_POST
+def membre_pin(request, pk):
+    m = get_object_or_404(Membre, pk=pk)
+    pin = _nouveau_pin()
+    m.definir_pin(pin)
+    m.save(update_fields=["pin_hash", "pin_echecs", "pin_bloque_jusqua"])
+    request.session[f"pin_{m.pk}"] = pin
+    messages.success(request, f"Nouveau mot de passe provisoire créé pour {m.nom}.")
+    return redirect("membre_detail", pk=m.pk)
+
+
+@responsable_requis
+@require_POST
+def membre_pin_masquer(request, pk):
+    request.session.pop(f"pin_{pk}", None)
+    return redirect("membre_detail", pk=pk)
+
+
+@responsable_requis
+def affiche_pdf(request):
+    rep = HttpResponse(pdf.affiche_pdf(), content_type="application/pdf")
+    rep["Content-Disposition"] = 'inline; filename="affiche-entree.pdf"'
+    return rep
+
+
+def _nouveau_pin():
+    import secrets
+    return f"{secrets.randbelow(10000):04d}"
 
 
 @admin_requis

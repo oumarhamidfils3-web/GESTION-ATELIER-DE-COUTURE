@@ -1,0 +1,53 @@
+{% extends "gestion/base.html" %}
+{% load duree %}
+{% block title %}Mon compte — {{ ATELIER_NOM }}{% endblock %}
+{% block head %}{% if attente %}<meta http-equiv="refresh" content="8">{% endif %}{% endblock %}
+{% block content %}
+<div class="card hero" style="text-align:left">
+  <div class="row" style="align-items:flex-start">
+    <div class="who"><span class="ini">{{ m.nom|initiales }}</span>
+      <div><h1 style="margin:0;font-size:1.35rem">{{ m.nom }}</h1><div class="m">{{ m.numero }}</div></div></div>
+    <div style="text-align:right">
+      <span class="tag {{ l.etat }}">{% if l.etat == "actif" %}Abonnement actif{% elif l.etat == "epuise" %}Heures épuisées{% elif l.etat == "revoque" %}Abonnement révoqué{% else %}Sans forfait{% endif %}</span>
+      {% if dans %}<br><span class="tag dans" style="margin-top:.3rem">Dans l'atelier</span>{% endif %}
+    </div>
+  </div>
+  <p class="m" style="margin:1rem 0 0">Temps restant</p>
+  {% if dans and l.etat == "actif" %}<div class="time" data-restant="{{ l.restant }}" data-total="{{ l.total_s }}" data-bar="barre"></div>{% else %}<div class="time">{{ l.restant|duree }}</div>{% endif %}
+  <div class="bar{% if l.restant <= 7200 %} low{% endif %}" id="barre" aria-hidden="true"><i style="width:{{ l.pct }}%"></i></div>
+</div>
+
+{% if attente %}
+<div class="card" style="border-color:var(--ink2)">
+  <h2>{% if attente.type == "entree" %}Entrée{% else %}Sortie{% endif %} en attente de validation</h2>
+  <p class="m">Envoyée à {{ attente.cree_le|time:"H:i" }}. Un responsable va la valider ; cette page se met à jour toute seule.</p>
+  <form method="post" action="{% url 'espace_annuler' %}">{% csrf_token %}<button class="btn sec" type="submit">Annuler ma demande</button></form>
+</div>
+{% endif %}
+
+<div class="tiles">
+  <form method="post" action="{% url 'espace_entree' %}">{% csrf_token %}
+    <button class="tile" type="submit" {% if dans or attente or not peut_entrer %}disabled{% endif %}>
+      <span class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg></span>
+      Entrée de l'atelier<small>Je commence ma séance</small></button></form>
+  <form method="post" action="{% url 'espace_sortie' %}">{% csrf_token %}
+    <button class="tile out" type="submit" {% if not dans or attente %}disabled{% endif %}>
+      <span class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></span>
+      Sortie de l'atelier<small>Je termine ma séance</small></button></form>
+  <a class="tile pay" href="{% url 'espace_renouveler' %}">
+    <span class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></span>
+    Renouveler mon forfait<small>Ajouter des heures</small></a>
+  <a class="tile info" href="{% url 'espace_forfait' %}">
+    <span class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+    Consulter mon forfait<small>Heures et séances</small></a>
+</div>
+
+{% if l.etat == "epuise" %}<p class="m">Vos heures sont épuisées : renouvelez votre forfait pour entrer.</p>{% endif %}
+{% if l.etat == "revoque" %}<p class="m">Votre abonnement est révoqué. Rapprochez-vous de l'administrateur.</p>{% endif %}
+
+<div class="row" style="margin-top:.5rem">
+  <a href="{% url 'espace_mot_de_passe' %}">Changer mon mot de passe</a>
+  <form method="post" action="{% url 'espace_quitter' %}">{% csrf_token %}
+    <button class="btn sec" type="submit">Ce n'est pas moi / me déconnecter</button></form>
+</div>
+{% endblock %}

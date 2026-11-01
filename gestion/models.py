@@ -1,6 +1,7 @@
 import uuid
 
 from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
 from django.utils import timezone
 
@@ -42,9 +43,24 @@ class Membre(models.Model):
     token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     cree_le = models.DateTimeField(auto_now_add=True)
     cree_par = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    # Code personnel (4 chiffres) : sert au membre à s'identifier sur son téléphone après avoir scanné le QR code.
+    pin_hash = models.CharField(max_length=128, blank=True, editable=False)
+    pin_echecs = models.PositiveSmallIntegerField(default=0, editable=False)
+    pin_bloque_jusqua = models.DateTimeField(null=True, blank=True, editable=False)
 
     class Meta:
         ordering = ["nom"]
+
+    def definir_pin(self, pin):
+        self.pin_hash = make_password(pin)
+        self.pin_echecs = 0
+        self.pin_bloque_jusqua = None
+
+    def verifier_pin(self, pin):
+        return bool(self.pin_hash) and check_password(pin or "", self.pin_hash)
+
+    def demande_en_attente(self):
+        return self.demandes.filter(statut=Demande.ATTENTE).first()
 
     def __str__(self):
         return f"{self.nom} ({self.numero})"
@@ -172,3 +188,21 @@ class Envoi(models.Model):
     ok = models.BooleanField(default=False)
     erreur = models.CharField(max_length=300, blank=True)
     cree_le = models.DateTimeField(auto_now_add=True)
+
+
+class Demande(models.Model):
+    """Entrée ou sortie demandée par le membre depuis son téléphone ; seul un responsable ou l'administrateur la valide."""
+    ENTREE, SORTIE = "entree", "sortie"
+    TYPES = [(ENTREE, "Entrée"), (SORTIE, "Sortie")]
+    ATTENTE, VALIDEE, REFUSEE, ANNULEE = "attente", "validee", "refusee", "annulee"
+    STATUTS = [(ATTENTE, "En attente"), (VALIDEE, "Validée"), (REFUSEE, "Refusée"), (ANNULEE, "Annulée")]
+
+    membre = models.ForeignKey(Membre, on_delete=models.CASCADE, related_name="demandes")
+    type = models.CharField(max_length=10, choices=TYPES)
+    statut = models.CharField(max_length=10, choices=STATUTS, default=ATTENTE)
+    cree_le = models.DateTimeField(auto_now_add=True)
+    traite_par = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    traite_le = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-cree_le"]

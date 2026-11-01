@@ -21,6 +21,12 @@ class AtelierTests(TestCase):
         self.m = Membre.objects.create(nom="Awa Bello", telephone="670000000", metier="Couturière", cree_par=self.resp)
         services.ajouter_forfait(self.m, self.forfait, self.resp)
 
+    def connecter_membre(self, m=None):
+        m = m or self.m
+        sess = self.client.session
+        sess["membre_id"] = m.pk
+        sess.save()
+
     def test_numero_et_forfait(self):
         self.assertEqual(self.m.numero, f"AT-{self.m.pk:04d}")
         self.assertEqual(self.m.abonnement_actif().total_s, 36000)
@@ -74,11 +80,10 @@ class AtelierTests(TestCase):
         self.assertEqual(self.client.get(reverse("membre_detail", args=[self.m.pk])).status_code, 200)
         self.assertEqual(self.client.get(reverse("scan", args=[self.m.token])).status_code, 200)
 
-    def test_scan_membre_voit_son_espace(self):
+    def test_scan_carte_par_un_membre_demande_le_code(self):
         r = self.client.get(reverse("scan", args=[self.m.token]))
-        self.assertRedirects(r, reverse("espace_membre", args=[self.m.token]))
-        self.assertEqual(self.client.get(reverse("espace_membre", args=[self.m.token])).status_code, 200)
-        self.assertEqual(self.client.get(reverse("renouveler", args=[self.m.token])).status_code, 200)
+        self.assertRedirects(r, reverse("membre_acces", args=[self.m.token]))
+        self.assertEqual(self.client.get(reverse("espace")).status_code, 302)  # pas de session : refusé
 
     def test_validation_via_vue_et_roles(self):
         self.client.force_login(self.resp)
@@ -97,7 +102,8 @@ class AtelierTests(TestCase):
         self.resp.is_active = False
         self.resp.save()
         self.client.force_login(self.resp)
-        self.assertNotEqual(self.client.get(reverse("accueil")).status_code, 200)
+        self.assertNotEqual(self.client.get(reverse("membres")).status_code, 200)
+        self.assertNotContains(self.client.get(reverse("accueil")), "Dans l")
 
     def test_inscription_via_formulaire(self):
         self.client.force_login(self.resp)
@@ -112,7 +118,7 @@ class AtelierTests(TestCase):
 
 from django.test import override_settings  # noqa: E402
 
-from .models import Alerte, Envoi, Paiement  # noqa: E402
+from .models import Alerte, Demande, Envoi, Paiement  # noqa: E402
 
 
 @override_settings(ADMIN_TELEPHONES=["677000001"], PAIEMENT_MOBILE_ACTIF=True)
@@ -157,7 +163,7 @@ class BlocDeuxTests(AtelierTests):
         self.assertEqual(services.traiter_alertes(), 0)
 
     def test_renouvellement_caisse_puis_validation(self):
-        url = reverse("renouveler", args=[self.m.token])
+        self.connecter_membre(); url = reverse("espace_renouveler")
         self.assertEqual(self.client.get(url).status_code, 200)
         r = self.client.post(url, {"forfait": self.forfait.pk, "mode": "caisse"})
         self.assertEqual(r.status_code, 302)
@@ -176,7 +182,7 @@ class BlocDeuxTests(AtelierTests):
         self.assertEqual(self.m.abonnement_actif().total_s, 72000)
 
     def test_mobile_money_exige_reference_et_refus(self):
-        url = reverse("renouveler", args=[self.m.token])
+        self.connecter_membre(); url = reverse("espace_renouveler")
         self.client.post(url, {"forfait": self.forfait.pk, "mode": "orange"})
         self.assertEqual(Paiement.objects.count(), 0)
         self.client.post(url, {"forfait": self.forfait.pk, "mode": "momo", "reference": "MP123"})
@@ -189,7 +195,7 @@ class BlocDeuxTests(AtelierTests):
         self.assertEqual(self.m.abonnement_actif().total_s, 36000)
 
     def test_nouvelle_demande_annule_la_precedente(self):
-        url = reverse("renouveler", args=[self.m.token])
+        self.connecter_membre(); url = reverse("espace_renouveler")
         self.client.post(url, {"forfait": self.forfait.pk, "mode": "caisse"})
         self.client.post(url, {"forfait": self.forfait.pk, "mode": "caisse"})
         self.assertEqual(Paiement.objects.filter(statut="attente").count(), 1)
@@ -200,7 +206,7 @@ class BlocDeuxTests(AtelierTests):
         s.entree_at = timezone.now() - timedelta(hours=11)
         s.save()
         services.cloturer_depassements()
-        url = reverse("renouveler", args=[self.m.token])
+        self.connecter_membre(); url = reverse("espace_renouveler")
         self.client.post(url, {"forfait": self.forfait.pk, "mode": "caisse"})
         p = Paiement.objects.get()
         services.valider_paiement(p, self.resp)
@@ -208,7 +214,7 @@ class BlocDeuxTests(AtelierTests):
 
     def test_membre_revoque_ne_peut_pas_renouveler(self):
         services.revoquer(self.m, self.admin, "x")
-        url = reverse("renouveler", args=[self.m.token])
+        self.connecter_membre(); url = reverse("espace_renouveler")
         self.client.post(url, {"forfait": self.forfait.pk, "mode": "caisse"})
         self.assertEqual(Paiement.objects.count(), 0)
 
@@ -221,7 +227,7 @@ class BlocDeuxTests(AtelierTests):
 
     @override_settings(PAIEMENT_MOBILE_ACTIF=False)
     def test_caisse_uniquement_tant_que_mobile_inactif(self):
-        url = reverse("renouveler", args=[self.m.token])
+        self.connecter_membre(); url = reverse("espace_renouveler")
         page = self.client.get(url)
         self.assertContains(page, "Caisse")
         self.assertNotContains(page, 'value="orange"')
@@ -298,3 +304,243 @@ class PhotoTests(AtelierTests):
     def test_photo_absente_donne_404(self):
         self.client.force_login(self.resp)
         self.assertEqual(self.client.get(reverse("photo_membre", args=[self.m.pk])).status_code, 404)
+
+
+class EspaceMembreTests(AtelierTests):
+    def setUp(self):
+        super().setUp()
+        self.m.definir_pin("4821")
+        self.m.save()
+        self.autre = Membre.objects.create(nom="Autre Membre", telephone="671", cree_par=self.resp)
+        self.autre.definir_pin("1111")
+        self.autre.save()
+        services.ajouter_forfait(self.autre, self.forfait, self.resp)
+
+    def test_connexion_par_numero_et_code(self):
+        r = self.client.post(reverse("atelier_acces"), {"numero": self.m.numero, "code": "4821"})
+        self.assertRedirects(r, reverse("espace"))
+        page = self.client.get(reverse("espace"))
+        for libelle in ("Entrée de l'atelier", "Sortie de l'atelier", "Renouveler mon forfait", "Consulter mon forfait"):
+            self.assertContains(page, libelle)
+
+    def test_numero_souple_et_mauvais_code(self):
+        r = self.client.post(reverse("atelier_acces"), {"numero": "at 1", "code": "0000"})
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "incorrect")
+        self.assertEqual(self.client.get(reverse("espace")).status_code, 302)
+        r = self.client.post(reverse("atelier_acces"), {"numero": str(self.m.pk), "code": "4821"})
+        self.assertRedirects(r, reverse("espace"))
+
+    def test_blocage_apres_cinq_erreurs(self):
+        for _ in range(5):
+            self.client.post(reverse("atelier_acces"), {"numero": self.m.numero, "code": "0000"})
+        r = self.client.post(reverse("atelier_acces"), {"numero": self.m.numero, "code": "4821"})
+        self.assertContains(r, "Trop d")
+        self.assertEqual(self.client.get(reverse("espace")).status_code, 302)
+
+    def test_acces_par_la_carte(self):
+        url = reverse("membre_acces", args=[self.m.token]) + "?suite=renouveler"
+        self.assertContains(self.client.get(url), self.m.numero)
+        r = self.client.post(url, {"code": "4821"})
+        self.assertRedirects(r, reverse("espace_renouveler"))
+
+    def test_le_membre_ne_voit_que_son_compte(self):
+        self.connecter_membre()
+        page = self.client.get(reverse("espace"))
+        self.assertContains(page, "Awa Bello")
+        self.assertNotContains(page, "Autre Membre")
+        self.assertNotContains(self.client.get(reverse("espace_forfait")), "Autre Membre")
+        # aucune page responsable
+        for nom in ("membres", "caisse", "responsables", "affiche_pdf"):
+            self.assertIn(self.client.get(reverse(nom)).status_code, (302, 403))
+        self.assertRedirects(self.client.get(reverse("accueil")), reverse("espace"))
+        for nom, args in (("membre_detail", [self.autre.pk]), ("fiche_pdf", [self.autre.pk]), ("photo_membre", [self.autre.pk])):
+            self.assertEqual(self.client.get(reverse(nom, args=args)).status_code, 302)
+        self.assertEqual(self.client.post(reverse("valider", args=[self.autre.pk])).status_code, 302)
+        self.assertIsNone(self.autre.seance_ouverte())
+
+    def test_le_membre_ne_peut_pas_valider_sa_propre_entree(self):
+        self.connecter_membre()
+        self.client.post(reverse("espace_entree"))
+        self.assertIsNone(self.m.seance_ouverte())  # rien ne démarre sans un responsable
+        d = self.m.demande_en_attente()
+        self.assertEqual(d.type, "entree")
+        self.assertContains(self.client.get(reverse("espace")), "en attente")
+        r = self.client.post(reverse("demande_traiter", args=[d.pk, "valider"]))
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Demande.objects.get(pk=d.pk).statut, "attente")
+
+    def test_entree_puis_sortie_validees_par_un_responsable(self):
+        self.connecter_membre()
+        self.client.post(reverse("espace_entree"))
+        d = self.m.demande_en_attente()
+        services.traiter_demande(d, self.resp, True)
+        s = self.m.seance_ouverte()
+        self.assertIsNotNone(s)
+        self.assertEqual(s.entree_par, self.resp)
+        s.entree_at = timezone.now() - timedelta(hours=2)
+        s.save()
+        self.client.post(reverse("espace_sortie"))
+        d2 = self.m.demande_en_attente()
+        self.assertEqual(d2.type, "sortie")
+        # le responsable valide plus tard : le temps s'arrête à l'heure du scan du membre
+        Demande.objects.filter(pk=d2.pk).update(cree_le=timezone.now() - timedelta(minutes=30))
+        services.traiter_demande(Demande.objects.get(pk=d2.pk), self.resp, True)
+        self.assertIsNone(self.m.seance_ouverte())
+        ab = self.m.abonnement_actif()
+        self.assertAlmostEqual(ab.consomme_s, 5400, delta=5)  # 1 h 30 min, pas 2 h
+
+    def test_refus_et_annulation(self):
+        self.connecter_membre()
+        self.client.post(reverse("espace_entree"))
+        services.traiter_demande(self.m.demande_en_attente(), self.resp, False)
+        self.assertIsNone(self.m.seance_ouverte())
+        self.client.post(reverse("espace_entree"))
+        self.client.post(reverse("espace_annuler"))
+        self.assertIsNone(self.m.demande_en_attente())
+        self.assertEqual(self.m.demandes.filter(statut="annulee").count(), 1)
+
+    def test_regles_des_demandes(self):
+        self.connecter_membre()
+        self.client.post(reverse("espace_sortie"))  # pas dans l'atelier
+        self.assertEqual(Demande.objects.count(), 0)
+        self.client.post(reverse("espace_entree"))
+        self.client.post(reverse("espace_entree"))  # déjà en attente
+        self.assertEqual(Demande.objects.count(), 1)
+
+    def test_validation_directe_solde_la_demande(self):
+        self.connecter_membre()
+        self.client.post(reverse("espace_entree"))
+        services.valider_entree(self.m, self.resp)
+        self.assertIsNone(self.m.demande_en_attente())
+
+    def test_membre_epuise_ou_revoque_ne_peut_pas_demander_entree(self):
+        services.revoquer(self.m, self.admin, "x")
+        self.connecter_membre()
+        r = self.client.post(reverse("espace_entree"), follow=True)
+        self.assertContains(r, "révoqué")
+        self.assertEqual(Demande.objects.count(), 0)
+
+    def test_pin_affiche_a_l_inscription_et_reinitialisable(self):
+        self.client.force_login(self.resp)
+        r = self.client.post(reverse("membre_nouveau"), {
+            "nom": "Nouvelle", "telephone": "672", "forfait": self.forfait.pk})
+        n = Membre.objects.get(nom="Nouvelle")
+        pin = self.client.session[f"pin_{n.pk}"]
+        self.assertTrue(n.verifier_pin(pin))
+        self.assertNotIn(pin, n.pin_hash)
+        self.assertContains(self.client.get(reverse("membre_detail", args=[n.pk])), pin)
+        self.assertTrue(self.client.get(reverse("fiche_pdf", args=[n.pk])).content.startswith(b"%PDF"))
+        self.client.post(reverse("membre_pin_masquer", args=[n.pk]))
+        self.assertNotContains(self.client.get(reverse("membre_detail", args=[n.pk])), "Mot de passe provisoire du membre")
+        self.client.post(reverse("membre_pin", args=[n.pk]))
+        n.refresh_from_db()
+        self.assertTrue(n.verifier_pin(self.client.session[f"pin_{n.pk}"]))
+
+    def test_accueil_responsable_liste_les_demandes_et_affiche(self):
+        self.connecter_membre()
+        self.client.post(reverse("espace_entree"))
+        self.client.force_login(self.resp)
+        page = self.client.get(reverse("accueil"))
+        self.assertContains(page, "Demandes des membres")
+        self.assertContains(page, "Awa Bello")
+        self.assertTrue(self.client.get(reverse("affiche_pdf")).content.startswith(b"%PDF"))
+
+    def test_responsable_connecte_sur_l_affiche_va_a_l_accueil(self):
+        self.client.force_login(self.resp)
+        self.assertRedirects(self.client.get(reverse("atelier_acces")), reverse("accueil"))
+
+    def test_quitter_la_session(self):
+        self.connecter_membre()
+        self.client.post(reverse("espace_quitter"))
+        self.assertEqual(self.client.get(reverse("espace")).status_code, 302)
+
+
+class AccesEtMotDePasseTests(EspaceMembreTests):
+    def test_ni_responsable_ni_membre_dans_l_administration(self):
+        self.client.force_login(self.resp)
+        for url in ("/admin/", "/admin/gestion/membre/", "/admin/auth/user/"):
+            r = self.client.get(url)
+            self.assertIn(r.status_code, (302, 403))
+            if r.status_code == 302:
+                self.assertIn("/admin/login/", r["Location"])
+        self.client.logout()
+        self.connecter_membre()
+        r = self.client.get("/admin/")
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/admin/login/", r["Location"])
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get("/admin/").status_code, 200)
+
+    def test_lien_administration_reserve_a_l_administrateur(self):
+        self.client.force_login(self.resp)
+        page = self.client.get(reverse("accueil"))
+        self.assertNotContains(page, "Administration")
+        self.assertNotContains(page, ">Responsables<")
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("accueil"))
+        self.assertContains(page, "Administration")
+        self.assertContains(page, "Responsables")
+
+    def test_un_responsable_ne_peut_pas_ajouter_un_responsable(self):
+        self.client.force_login(self.resp)
+        avant = User.objects.count()
+        r = self.client.post(reverse("responsables"), {
+            "identifiant": "pirate", "nom_complet": "Pirate", "mot_de_passe": "secret123"})
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(User.objects.count(), avant)
+        self.assertEqual(self.client.post(reverse("responsable_basculer", args=[self.resp.profil.pk])).status_code, 403)
+
+    def test_un_membre_ne_peut_pas_inscrire_un_membre(self):
+        self.connecter_membre()
+        avant = Membre.objects.count()
+        self.assertEqual(self.client.get(reverse("membre_nouveau")).status_code, 302)
+        r = self.client.post(reverse("membre_nouveau"), {
+            "nom": "Intrus", "telephone": "1", "forfait": self.forfait.pk})
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/connexion/", r["Location"])
+        self.assertEqual(Membre.objects.count(), avant)
+
+    def test_menu_du_membre_ne_contient_que_accueil(self):
+        self.connecter_membre()
+        page = self.client.get(reverse("espace"))
+        self.assertContains(page, "<a href=\"%s\">Accueil</a>" % reverse("espace"))
+        for interdit in ("Inscrire", "Caisse", "Membres</a>", "Responsables", "Administration", "Déconnexion</button>"):
+            self.assertNotContains(page, interdit)
+
+    def test_page_de_choix_pour_un_visiteur(self):
+        page = self.client.get(reverse("accueil"))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Je suis membre")
+        self.assertContains(page, "Je suis responsable")
+        self.assertNotContains(page, "Inscrire")
+
+    def test_connexion_par_mot_de_passe_sans_qr_code(self):
+        self.m.definir_pin("MotDePasse2026")
+        self.m.save()
+        r = self.client.post(reverse("atelier_acces"), {"numero": self.m.numero, "code": "MotDePasse2026"})
+        self.assertRedirects(r, reverse("espace"))
+
+    def test_changer_son_mot_de_passe(self):
+        self.connecter_membre()
+        url = reverse("espace_mot_de_passe")
+        self.assertEqual(self.client.get(url).status_code, 200)
+        # actuel faux, trop court, confirmation différente : rien ne change
+        for donnees in ({"actuel": "faux", "nouveau": "nouveau123", "confirmation": "nouveau123"},
+                        {"actuel": "4821", "nouveau": "abc", "confirmation": "abc"},
+                        {"actuel": "4821", "nouveau": "nouveau123", "confirmation": "autre123"}):
+            self.client.post(url, donnees)
+            self.m.refresh_from_db()
+            self.assertTrue(self.m.verifier_pin("4821"))
+        r = self.client.post(url, {"actuel": "4821", "nouveau": "nouveau123", "confirmation": "nouveau123"})
+        self.assertRedirects(r, reverse("espace"))
+        self.m.refresh_from_db()
+        self.assertTrue(self.m.verifier_pin("nouveau123"))
+        self.assertFalse(self.m.verifier_pin("4821"))
+        # connexion avec le nouveau mot de passe depuis un autre téléphone
+        self.client.logout()
+        r = self.client.post(reverse("atelier_acces"), {"numero": self.m.numero, "code": "nouveau123"})
+        self.assertRedirects(r, reverse("espace"))
+
+    def test_changement_de_mot_de_passe_reserve_au_membre_connecte(self):
+        self.assertEqual(self.client.get(reverse("espace_mot_de_passe")).status_code, 302)
